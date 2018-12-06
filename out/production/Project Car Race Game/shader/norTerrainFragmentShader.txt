@@ -1,0 +1,77 @@
+#version 400 core
+
+in vec2 pass_texCoords;
+in vec3 surfaceNormal;
+in vec3 toLightVector[4];
+in vec3 toCameraVector;
+in float visibility;
+
+out vec4 out_Color;
+uniform vec3 attenuation[4];
+uniform vec3 lightColor[4];
+
+
+
+uniform sampler2D backgroundTexture;
+uniform sampler2D rTexture;
+uniform sampler2D gTexture;
+uniform sampler2D bTexture;
+uniform sampler2D norRTexture;
+uniform sampler2D norGTexture;
+uniform sampler2D norBTexture;
+uniform sampler2D bgNorTexture;
+
+uniform sampler2D blendMap;
+
+
+uniform float useNormal;
+
+
+uniform float shineDamper;
+uniform float reflectivity;
+uniform vec3 skyColor;
+
+void main(void){
+
+	vec4 blendMapColor=texture(blendMap,pass_texCoords);
+
+	float backTextureAmount = 1- (blendMapColor.r+blendMapColor.g+blendMapColor.b);
+	vec2 tiledCoord = pass_texCoords*40.0;
+	vec4 backgroundTextureColor=texture(backgroundTexture,tiledCoord)*backTextureAmount;
+	vec4 rTextureColor=texture(rTexture,tiledCoord)*blendMapColor.r;
+	vec4 gTextureColor=texture(gTexture,tiledCoord)*blendMapColor.g;
+	vec4 bTextureColor=texture(bTexture,tiledCoord)*blendMapColor.b;
+
+
+	vec4 bgNormal=texture(bgNorTexture,tiledCoord)*backTextureAmount;
+	vec4 rNormal=texture(norRTexture,tiledCoord)*blendMapColor.r;
+    vec4 gNormal=texture(norGTexture,tiledCoord)*blendMapColor.g;
+    vec4 bNormal=texture(norBTexture,tiledCoord)*blendMapColor.b;
+
+	vec4 totalColor=backgroundTextureColor+rTextureColor+gTextureColor+bTextureColor;
+	vec4 totalNormal=(rNormal+gNormal+bNormal+bgNormal);
+	vec3 unitNormal=vec3(0);
+	if (useNormal>.5) unitNormal=normalize(totalNormal.rgb);
+	else unitNormal=normalize(surfaceNormal);
+	vec3 unitToCameraVector=normalize(toCameraVector);
+
+	vec3 totalDiffuse=vec3(0,0,0);
+	vec3 totalSpactacular=vec3(0,0,0);
+
+	for(int i=0;i<4;i++){
+		float distance=length(toLightVector[i]);
+		float attenuationFactor=(attenuation[i].x)+(attenuation[i].y*distance)+(attenuation[i].z*distance*distance);
+		vec3 unitToLight=normalize(toLightVector[i]);
+		float nDot= dot(unitNormal,unitToLight);
+		float brightness=max(nDot,0.1);
+		totalDiffuse =totalDiffuse+(brightness*lightColor[i])/attenuationFactor;
+		vec3 lightDirection=-unitToLight;
+		vec3 reflectLightDirection=reflect(lightDirection,unitNormal);
+		float spactacularFactor=dot(reflectLightDirection,unitToCameraVector);
+		spactacularFactor=max(spactacularFactor,0);
+		float dampFactor=pow(spactacularFactor,1);
+		totalSpactacular=totalSpactacular+(dampFactor*.25*lightColor[i])/attenuationFactor;
+	}
+	out_Color=vec4(totalDiffuse,1.0)* totalColor+vec4(totalSpactacular,1.0)* totalColor;
+	out_Color=mix(vec4(skyColor,1.0),out_Color,visibility);
+}
